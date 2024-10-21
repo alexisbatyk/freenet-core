@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +7,7 @@ use std::time::Duration;
 use crate::transport::packet_data::UnknownEncryption;
 use aes_gcm::Aes128Gcm;
 use futures::stream::FuturesUnordered;
-use futures::{Future, StreamExt};
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -67,7 +66,6 @@ impl std::fmt::Display for StreamId {
 }
 
 type InboundStreamResult = Result<(StreamId, SerializedMessage), StreamId>;
-type InboundStreamFut = Pin<Box<dyn Future<Output = InboundStreamResult> + Send>>;
 
 /// The `PeerConnection` struct is responsible for managing the connection with a remote peer.
 /// It provides methods for sending and receiving messages to and from the remote peer.
@@ -207,15 +205,15 @@ impl PeerConnection {
     #[instrument(name = "peer_connection", skip(self))]
     pub async fn recv(&mut self) -> Result<Vec<u8>> {
         // listen for incoming messages or receipts or wait until is time to do anything else again
-        let mut resend_check = Some(tokio::time::sleep(tokio::time::Duration::from_secs(1)));
+        let mut resend_check = Some(tokio::time::sleep(tokio::time::Duration::from_millis(10)));
 
-        // #[cfg(debug_assertions)]
-        // const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(2);
-        // #[cfg(not(debug_assertions))]
+        #[cfg(debug_assertions)]
+        const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(2);
+        #[cfg(not(debug_assertions))]
         const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(20);
-        // #[cfg(debug_assertions)]
-        // const KILL_CONNECTION_AFTER: Duration = Duration::from_secs(6);
-        // #[cfg(not(debug_assertions))]
+        #[cfg(debug_assertions)]
+        const KILL_CONNECTION_AFTER: Duration = Duration::from_secs(6);
+        #[cfg(not(debug_assertions))]
         const KILL_CONNECTION_AFTER: Duration = Duration::from_secs(60);
 
         let mut keep_alive = tokio::time::interval(KEEP_ALIVE_INTERVAL);
@@ -273,7 +271,7 @@ impl PeerConnection {
                         tracing::error!(%error, %packet_id, remote = %self.remote_conn.remote_addr, "error processing inbound packet");
                         error
                     })? {
-                        tracing::debug!(%packet_id, "returning full stream message");
+                        tracing::trace!(%packet_id, "returning full stream message");
                         return Ok(msg);
                     }
                 }
@@ -306,9 +304,9 @@ impl PeerConnection {
                     tracing::trace!(remote = ?self.remote_conn.remote_addr, "sending keep-alive");
                     self.noop(vec![]).await?;
                 }
-                _ = resend_check.take().unwrap_or(tokio::time::sleep(Duration::from_secs(5))) => {
+                _ = resend_check.take().unwrap_or(tokio::time::sleep(Duration::from_millis(10))) => {
                     loop {
-                        tracing::trace!(remote = ?self.remote_conn.remote_addr, "checking for resends");
+                        // tracing::trace!(remote = ?self.remote_conn.remote_addr, "checking for resends");
                         let maybe_resend = self.remote_conn
                             .sent_tracker
                             .lock()
@@ -593,7 +591,7 @@ mod tests {
             while let Some((_, network_packet)) = receiver.recv().await {
                 let decrypted = PacketData::<_, MAX_PACKET_SIZE>::from_buf(&network_packet)
                     .try_decrypt_sym(&cipher)
-                    .map_err(TransportError::PrivateKeyDecryptionError)?;
+                    .map_err(|e| e.to_string())?;
                 let SymmetricMessage {
                     payload:
                         SymmetricMessagePayload::StreamFragment {

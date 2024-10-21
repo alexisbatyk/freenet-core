@@ -2,7 +2,7 @@
 name = "freenet"
 version = "0.0.7"
 edition = "2021"
-rust-version = "1.71.1"
+rust-version = "1.80"
 publish = true
 description = "Freenet core software"
 license = "MIT OR Apache-2.0"
@@ -88,6 +88,7 @@ pico-args = "0.5"
 statrs = "0.17"
 tempfile = "3"
 tracing = "0.1"
+# console-subscriber = { version = "0.4" }
 
 [features]
 default = ["redb", "trace", "websocket"]
