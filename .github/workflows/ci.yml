@@ -12,7 +12,8 @@ jobs:
   test_all:
     name: Test
 
-    runs-on: ubuntu-latest
+    # Use more powerful runner
+    runs-on: freenet-core-ci
 
     strategy:
       max-parallel: 1
